@@ -1,4 +1,19 @@
 {
-  "name": "MuscleUpV2",
-  "displayName": "MuscleUpV2"
+  "expo": {
+    "name": "MuscleUp",
+    "slug": "muscleup",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kylemayotte.muscleup",
+      "buildNumber": "1"
+    },
+    "android": {
+      "package": "com.kylemayotte.muscleup"
+    }
+  },
+  "name": "muscleup",
+  "displayName": "MuscleUp"
 }
