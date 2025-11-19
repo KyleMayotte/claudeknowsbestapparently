@@ -1,12 +1,15 @@
 /**
  * Minimal Test App - Debugging black screen
+ * With proper React Navigation initialization
  */
 
 import React from 'react';
 import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
+import { NavigationContainer } from '@react-navigation/native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-function App() {
-  console.log('App is rendering!');
+function HomeScreen() {
+  console.log('HomeScreen is rendering!');
 
   return (
     <SafeAreaView style={styles.container}>
@@ -18,6 +21,18 @@ function App() {
         </Text>
       </View>
     </SafeAreaView>
+  );
+}
+
+function App() {
+  console.log('App is rendering!');
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <HomeScreen />
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 
