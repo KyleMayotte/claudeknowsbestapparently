@@ -312,7 +312,7 @@ function SettingsScreen() {
         <View style={styles.aboutSection}>
           <Text style={styles.aboutTitle}>About</Text>
           <Text style={styles.aboutText}>MuscleUp v1.0.0</Text>
-          <Text style={styles.aboutText}>Build 4</Text>
+          <Text style={styles.aboutText}>Build 5</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -338,17 +338,32 @@ function App() {
           <Tab.Screen
             name="Home"
             component={HomeScreen}
-            options={{ tabBarLabel: 'Home' }}
+            options={{
+              tabBarLabel: 'Home',
+              tabBarIcon: ({ color, size }) => (
+                <Text style={{ color, fontSize: size }}>⌂</Text>
+              ),
+            }}
           />
           <Tab.Screen
             name="Workout"
             component={WorkoutScreen}
-            options={{ tabBarLabel: 'Workout' }}
+            options={{
+              tabBarLabel: 'Workout',
+              tabBarIcon: ({ color, size }) => (
+                <Text style={{ color, fontSize: size }}>💪</Text>
+              ),
+            }}
           />
           <Tab.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{ tabBarLabel: 'Settings' }}
+            options={{
+              tabBarLabel: 'Settings',
+              tabBarIcon: ({ color, size }) => (
+                <Text style={{ color, fontSize: size }}>⚙</Text>
+              ),
+            }}
           />
         </Tab.Navigator>
       </NavigationContainer>
