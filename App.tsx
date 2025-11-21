@@ -3,7 +3,7 @@
  * Phase 2: Workout templates, categories, and improved UI
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   Switch,
   Modal,
   FlatList,
+  Vibration,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
@@ -216,6 +217,7 @@ function WorkoutScreen() {
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [workoutHistory, setWorkoutHistory] = useState<WorkoutHistory[]>([]);
 
   // Add workout modal state
   const [newWorkoutName, setNewWorkoutName] = useState('');
@@ -227,10 +229,125 @@ function WorkoutScreen() {
   // Category modal state
   const [newCategoryName, setNewCategoryName] = useState('');
 
+  // Rest timer state
+  const [restTimerActive, setRestTimerActive] = useState(false);
+  const [restTimeRemaining, setRestTimeRemaining] = useState(90);
+  const [restTimerDuration, setRestTimerDuration] = useState(90);
+  const restTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Add exercise to active workout state
+  const [showAddExerciseModal, setShowAddExerciseModal] = useState(false);
+  const [newExerciseForWorkout, setNewExerciseForWorkout] = useState('');
+
   useEffect(() => {
     loadTemplates();
     loadCategories();
+    loadWorkoutHistory();
   }, []);
+
+  // Rest timer effect
+  useEffect(() => {
+    if (restTimerActive && restTimeRemaining > 0) {
+      restTimerRef.current = setInterval(() => {
+        setRestTimeRemaining((prev) => {
+          if (prev <= 1) {
+            setRestTimerActive(false);
+            Vibration.vibrate([0, 200, 100, 200]);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (restTimerRef.current) {
+        clearInterval(restTimerRef.current);
+      }
+    };
+  }, [restTimerActive]);
+
+  const loadWorkoutHistory = async () => {
+    try {
+      const historyJson = await AsyncStorage.getItem(HISTORY_KEY);
+      if (historyJson) {
+        setWorkoutHistory(JSON.parse(historyJson));
+      }
+    } catch (error) {
+      console.error('Failed to load workout history:', error);
+    }
+  };
+
+  const startRestTimer = () => {
+    setRestTimeRemaining(restTimerDuration);
+    setRestTimerActive(true);
+  };
+
+  const stopRestTimer = () => {
+    setRestTimerActive(false);
+    setRestTimeRemaining(restTimerDuration);
+  };
+
+  const formatRestTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getPreviousWorkoutData = (exerciseName: string, setIndex: number) => {
+    // Find the most recent workout with this template
+    const previousWorkouts = workoutHistory
+      .filter((w) => activeWorkout && w.templateId === activeWorkout.id)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    if (previousWorkouts.length === 0) return null;
+
+    const prevWorkout = previousWorkouts[0];
+    const prevExercise = prevWorkout.exercises.find((ex) => ex.name === exerciseName);
+    if (!prevExercise || !prevExercise.sets[setIndex]) return null;
+
+    const prevSet = prevExercise.sets[setIndex];
+    if (!prevSet.reps && !prevSet.weight) return null;
+
+    return { reps: prevSet.reps, weight: prevSet.weight };
+  };
+
+  const addExerciseToActiveWorkout = () => {
+    if (!activeWorkout || !newExerciseForWorkout.trim()) return;
+
+    const newEx: Exercise = {
+      id: Date.now().toString(),
+      name: newExerciseForWorkout.trim(),
+      sets: [
+        { id: `${Date.now()}-1`, reps: '', weight: '', completed: false },
+        { id: `${Date.now()}-2`, reps: '', weight: '', completed: false },
+        { id: `${Date.now()}-3`, reps: '', weight: '', completed: false },
+      ],
+    };
+
+    setActiveWorkout({
+      ...activeWorkout,
+      exercises: [...activeWorkout.exercises, newEx],
+    });
+    setNewExerciseForWorkout('');
+    setShowAddExerciseModal(false);
+  };
+
+  const removeExerciseFromWorkout = (exerciseId: string) => {
+    if (!activeWorkout) return;
+    Alert.alert('Remove Exercise', 'Remove this exercise from workout?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          setActiveWorkout({
+            ...activeWorkout,
+            exercises: activeWorkout.exercises.filter((ex) => ex.id !== exerciseId),
+          });
+        },
+      },
+    ]);
+  };
 
   const loadTemplates = async () => {
     try {
@@ -295,6 +412,10 @@ function WorkoutScreen() {
 
   const toggleSetComplete = (exerciseId: string, setIndex: number) => {
     if (!activeWorkout) return;
+
+    const exercise = activeWorkout.exercises.find((ex) => ex.id === exerciseId);
+    const isCompleting = exercise && !exercise.sets[setIndex].completed;
+
     setActiveWorkout({
       ...activeWorkout,
       exercises: activeWorkout.exercises.map((ex) =>
@@ -303,6 +424,11 @@ function WorkoutScreen() {
           : ex
       ),
     });
+
+    // Start rest timer when completing a set
+    if (isCompleting) {
+      startRestTimer();
+    }
   };
 
   const addSetToExercise = (exerciseId: string) => {
@@ -463,6 +589,16 @@ function WorkoutScreen() {
   if (activeWorkout) {
     return (
       <SafeAreaView style={styles.container}>
+        {/* Rest Timer Banner */}
+        {restTimerActive && (
+          <View style={styles.restTimerBanner}>
+            <Text style={styles.restTimerText}>Rest: {formatRestTime(restTimeRemaining)}</Text>
+            <TouchableOpacity onPress={stopRestTimer} style={styles.restTimerSkip}>
+              <Text style={styles.restTimerSkipText}>Skip</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.activeWorkoutHeader}>
             <View>
@@ -473,48 +609,65 @@ function WorkoutScreen() {
 
           {activeWorkout.exercises.map((exercise) => (
             <View key={exercise.id} style={styles.exerciseCard}>
-              <Text style={styles.exerciseCardName}>{exercise.name}</Text>
+              <View style={styles.exerciseCardHeader}>
+                <Text style={styles.exerciseCardName}>{exercise.name}</Text>
+                <TouchableOpacity onPress={() => removeExerciseFromWorkout(exercise.id)}>
+                  <Text style={{ color: colors.error, fontSize: 18 }}>×</Text>
+                </TouchableOpacity>
+              </View>
 
               <View style={styles.setsHeader}>
                 <Text style={styles.setLabel}>Set</Text>
+                <Text style={styles.setLabel}>Previous</Text>
                 <Text style={styles.setLabel}>Reps</Text>
                 <Text style={styles.setLabel}>Weight</Text>
                 <Text style={styles.setLabel}>✓</Text>
               </View>
 
-              {exercise.sets.map((set, setIndex) => (
-                <View key={set.id} style={styles.setRow}>
-                  <Text style={styles.setNumber}>{setIndex + 1}</Text>
-                  <TextInput
-                    style={[styles.setInput, set.completed && styles.setInputCompleted]}
-                    placeholder="0"
-                    placeholderTextColor={colors.textTertiary}
-                    keyboardType="numeric"
-                    value={set.reps}
-                    onChangeText={(text) => updateSet(exercise.id, setIndex, 'reps', text)}
-                  />
-                  <TextInput
-                    style={[styles.setInput, set.completed && styles.setInputCompleted]}
-                    placeholder="0"
-                    placeholderTextColor={colors.textTertiary}
-                    keyboardType="numeric"
-                    value={set.weight}
-                    onChangeText={(text) => updateSet(exercise.id, setIndex, 'weight', text)}
-                  />
-                  <TouchableOpacity
-                    style={[styles.checkButton, set.completed && styles.checkButtonCompleted]}
-                    onPress={() => toggleSetComplete(exercise.id, setIndex)}
-                  >
-                    <Text style={styles.checkButtonText}>{set.completed ? '✓' : ''}</Text>
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {exercise.sets.map((set, setIndex) => {
+                const prevData = getPreviousWorkoutData(exercise.name, setIndex);
+                return (
+                  <View key={set.id} style={styles.setRow}>
+                    <Text style={styles.setNumber}>{setIndex + 1}</Text>
+                    <Text style={styles.previousData}>
+                      {prevData ? `${prevData.reps}×${prevData.weight}` : '-'}
+                    </Text>
+                    <TextInput
+                      style={[styles.setInput, set.completed && styles.setInputCompleted]}
+                      placeholder={prevData?.reps || '0'}
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="numeric"
+                      value={set.reps}
+                      onChangeText={(text) => updateSet(exercise.id, setIndex, 'reps', text)}
+                    />
+                    <TextInput
+                      style={[styles.setInput, set.completed && styles.setInputCompleted]}
+                      placeholder={prevData?.weight || '0'}
+                      placeholderTextColor={colors.textTertiary}
+                      keyboardType="numeric"
+                      value={set.weight}
+                      onChangeText={(text) => updateSet(exercise.id, setIndex, 'weight', text)}
+                    />
+                    <TouchableOpacity
+                      style={[styles.checkButton, set.completed && styles.checkButtonCompleted]}
+                      onPress={() => toggleSetComplete(exercise.id, setIndex)}
+                    >
+                      <Text style={styles.checkButtonText}>{set.completed ? '✓' : ''}</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
 
               <TouchableOpacity style={styles.addSetButton} onPress={() => addSetToExercise(exercise.id)}>
                 <Text style={{ color: colors.primary }}>+ Add Set</Text>
               </TouchableOpacity>
             </View>
           ))}
+
+          {/* Add Exercise Button */}
+          <TouchableOpacity style={styles.addExerciseToWorkoutBtn} onPress={() => setShowAddExerciseModal(true)}>
+            <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '600' }}>+ Add Exercise</Text>
+          </TouchableOpacity>
 
           <View style={styles.actionButtons}>
             <TouchableOpacity style={styles.cancelButton} onPress={cancelWorkout}>
@@ -525,6 +678,33 @@ function WorkoutScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* Add Exercise Modal */}
+        <Modal visible={showAddExerciseModal} animationType="slide" presentationStyle="pageSheet">
+          <SafeAreaView style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <TouchableOpacity onPress={() => setShowAddExerciseModal(false)}>
+                <Text style={{ color: colors.error }}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={styles.modalTitle}>Add Exercise</Text>
+              <TouchableOpacity onPress={addExerciseToActiveWorkout}>
+                <Text style={{ color: colors.primary, fontWeight: '600' }}>Add</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.scrollContent}>
+              <Text style={styles.inputLabel}>Exercise Name</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g., Bicep Curls"
+                placeholderTextColor={colors.textTertiary}
+                value={newExerciseForWorkout}
+                onChangeText={setNewExerciseForWorkout}
+                autoFocus
+                onSubmitEditing={addExerciseToActiveWorkout}
+              />
+            </View>
+          </SafeAreaView>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -763,7 +943,7 @@ function SettingsScreen() {
         <View style={styles.aboutSection}>
           <Text style={styles.aboutTitle}>About</Text>
           <Text style={styles.aboutText}>MuscleUp v1.0.0</Text>
-          <Text style={styles.aboutText}>Build 6</Text>
+          <Text style={styles.aboutText}>Build 7</Text>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1005,7 +1185,51 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: colors.textPrimary,
+    flex: 1,
+  },
+  exerciseCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
+  },
+  restTimerBanner: {
+    backgroundColor: colors.primary,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  restTimerText: {
+    color: '#FFF',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  restTimerSkip: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  restTimerSkipText: {
+    color: '#FFF',
+    fontWeight: '600',
+  },
+  previousData: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.textTertiary,
+    textAlign: 'center',
+  },
+  addExerciseToWorkoutBtn: {
+    backgroundColor: colors.surface,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    borderStyle: 'dashed',
   },
   setsHeader: {
     flexDirection: 'row',
